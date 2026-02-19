@@ -12,7 +12,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from memory.store import MemoryStore
-from tools.search import StubSearchTool
+from tools.search import ExaSearchTool, StubSearchTool
 from agents.planner import PlannerAgent
 from agents.researcher import ResearcherAgent
 from agents.synthesizer import SynthesizerAgent
@@ -115,6 +115,88 @@ class TestStubSearchTool(unittest.TestCase):
     def test_includes_stub_urls(self):
         result = self.tool("anything")
         self.assertIn("https://example.com", result)
+
+
+# ---------------------------------------------------------------------------
+# ExaSearchTool
+# ---------------------------------------------------------------------------
+
+class TestExaSearchTool(unittest.TestCase):
+    """ExaSearchTool tests – the exa_py.Exa client is fully mocked."""
+
+    def _make_exa_result(self, title: str, url: str, highlights: list[str]) -> MagicMock:
+        r = MagicMock()
+        r.title = title
+        r.url = url
+        r.highlights = highlights
+        return r
+
+    def _make_tool(self, results: list) -> ExaSearchTool:
+        """Build an ExaSearchTool whose underlying Exa client is mocked."""
+        mock_response = MagicMock()
+        mock_response.results = results
+
+        mock_client = MagicMock()
+        mock_client.search_and_contents.return_value = mock_response
+
+        with patch("tools.search.ExaSearchTool.__init__", lambda self, **kw: None):
+            tool = ExaSearchTool.__new__(ExaSearchTool)
+        tool._client = mock_client
+        tool.max_results = 5
+        tool.num_sentences = 3
+        return tool
+
+    def test_returns_string(self):
+        results = [self._make_exa_result("Title A", "https://exa.ai/a", ["Highlight one."])]
+        tool = self._make_tool(results)
+        out = tool._fetch.__func__(tool, "ocean acidification")  # call _fetch directly
+        self.assertIsInstance(out, list)
+
+    def test_call_formats_output(self):
+        results = [
+            self._make_exa_result("Ocean Chemistry", "https://exa.ai/chem", ["CO2 dissolves.", "pH drops."]),
+            self._make_exa_result("Marine Life", "https://exa.ai/life", ["Coral bleaching is increasing."]),
+        ]
+        tool = self._make_tool(results)
+        output = tool("ocean acidification")
+        self.assertIn("Ocean Chemistry", output)
+        self.assertIn("https://exa.ai/chem", output)
+        self.assertIn("Marine Life", output)
+        self.assertIn("CO2 dissolves.", output)
+
+    def test_highlights_joined_as_snippet(self):
+        hl = ["Sentence one.", "Sentence two.", "Sentence three."]
+        results = [self._make_exa_result("T", "https://x.com", hl)]
+        tool = self._make_tool(results)
+        fetched = tool._fetch("query")
+        self.assertEqual(fetched[0]["snippet"], " ".join(hl))
+
+    def test_no_results_returns_message(self):
+        tool = self._make_tool([])
+        output = tool("nothing")
+        self.assertEqual(output, "No results found.")
+
+    def test_missing_highlights_handled(self):
+        r = MagicMock()
+        r.title = "T"
+        r.url = "https://x.com"
+        r.highlights = None  # Exa may omit highlights for some results
+        tool = self._make_tool([r])
+        fetched = tool._fetch("query")
+        self.assertEqual(fetched[0]["snippet"], "")
+
+    def test_raises_without_api_key(self):
+        with patch.dict("os.environ", {}, clear=True):
+            with self.assertRaises((ValueError, Exception)):
+                ExaSearchTool(api_key="")
+
+    def test_uses_autoprompt(self):
+        results = [self._make_exa_result("T", "https://x.com", ["hl"])]
+        tool = self._make_tool(results)
+        tool("test query")
+        tool._client.search_and_contents.assert_called_once()
+        call_kwargs = tool._client.search_and_contents.call_args.kwargs
+        self.assertTrue(call_kwargs.get("use_autoprompt", False))
 
 
 # ---------------------------------------------------------------------------

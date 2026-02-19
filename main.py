@@ -2,9 +2,9 @@
 
 Usage
 -----
-    # With a real OpenAI key and a real search API key:
+    # With real API keys (Exa for search, OpenAI for LLM):
     export OPENAI_API_KEY=sk-...
-    export SEARCH_API_KEY=...
+    export EXA_API_KEY=...
     python main.py "What are the main causes and consequences of ocean acidification?"
 
     # Offline / stub mode (no API keys required):
@@ -21,7 +21,7 @@ import sys
 from dotenv import load_dotenv
 
 from agents import OrchestratorAgent
-from tools import SearchTool, StubSearchTool
+from tools import ExaSearchTool, StubSearchTool
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -78,13 +78,13 @@ def main() -> None:
     if not args.stub:
         if not os.environ.get("OPENAI_API_KEY"):
             sys.exit("Error: OPENAI_API_KEY is not set. Use --stub for offline mode.")
-        if not os.environ.get("SEARCH_API_KEY"):
+        if not os.environ.get("EXA_API_KEY"):
             sys.exit(
-                "Error: SEARCH_API_KEY is not set. "
+                "Error: EXA_API_KEY is not set. "
                 "Use --stub for offline mode or set the environment variable."
             )
 
-    search_fn = StubSearchTool() if args.stub else SearchTool()
+    search_fn = StubSearchTool() if args.stub else ExaSearchTool()
 
     orchestrator = OrchestratorAgent(
         search_fn=search_fn,
